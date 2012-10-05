@@ -36,7 +36,7 @@
 #include <plat/regs-fb.h>
 #include <plat/pm.h>
 
-#define CPUFREQ_SAMPLING_RATE      40000
+#define CPUFREQ_SAMPLING_RATE      100000
 
 static struct clk *mpu_clk;
 static struct regulator *arm_regulator;
@@ -64,6 +64,15 @@ unsigned int freq_uv_table[6][3] = {
 	{400000, 1050, 1050},
 	{200000, 950, 950},
 	{100000, 950, 950}
+};
+
+unsigned int freq_int_uv_table[6][3] = {
+  {1200000, 1150, 1150},
+  {1000000, 1100, 1100},
+  {800000, 1100, 1100},
+  {400000, 1100, 1100},
+  {200000, 1100, 1100},
+  {100000, 1000, 1000}
 };
 
 /* frequency */
@@ -370,11 +379,6 @@ static void s5pv210_cpufreq_clksrcs_MPLL2APLL(unsigned int index,
 #ifdef CONFIG_DVFS_LIMIT
 void s5pv210_lock_dvfs_high_level(uint nToken, uint perf_level) 
 {
-	uint freq_level;
-	struct cpufreq_policy *policy;
-
-	printk(KERN_DEBUG "%s : lock with token(%d) level(%d) current(%X)\n",
-			__func__, nToken, perf_level, g_dvfs_high_lock_token);
 
 	if (g_dvfs_high_lock_token & (1 << nToken))
 		return;
@@ -382,31 +386,24 @@ void s5pv210_lock_dvfs_high_level(uint nToken, uint perf_level)
 	if (perf_level > (MAX_PERF_LEVEL - 1))
 		return;
 
-	//mutex_lock(&dvfs_high_lock);
-
 	g_dvfs_high_lock_token |= (1 << nToken);
 	g_dvfslockval[nToken] = perf_level;
 
 	if (perf_level <  g_dvfs_high_lock_limit)
 		g_dvfs_high_lock_limit = perf_level;
 
-	//mutex_unlock(&dvfs_high_lock);
-
-	policy = cpufreq_cpu_get(0);
-	if (policy == NULL)
-		return;
-
-	freq_level = freq_table[perf_level].frequency;
-
-	cpufreq_driver_target(policy, freq_level, CPUFREQ_RELATION_L);
+	/* Reevaluate cpufreq policy with the effect of calling the governor with a
+	 * CPUFREQ_GOV_LIMITS event, so that the governor sets its preferred
+	 * frequency.  The governor MUST call __cpufreq_driver_target, even if it
+	 * decides not to change frequencies, as the DVFS limit takes effect in
+	 * doing so. */
+	cpufreq_update_policy(0);
 }
 EXPORT_SYMBOL(s5pv210_lock_dvfs_high_level);
 
 void s5pv210_unlock_dvfs_high_level(unsigned int nToken) 
 {
 	unsigned int i;
-
-	//mutex_lock(&dvfs_high_lock);
 
 	g_dvfs_high_lock_token &= ~(1 << nToken);
 	g_dvfslockval[nToken] = MAX_PERF_LEVEL;
@@ -419,10 +416,10 @@ void s5pv210_unlock_dvfs_high_level(unsigned int nToken)
 		}
 	}
 
-	//mutex_unlock(&dvfs_high_lock);
-
-	printk(KERN_DEBUG "%s : unlock with token(%d) current(%X) level(%d)\n",
-			__func__, nToken, g_dvfs_high_lock_token, g_dvfs_high_lock_limit);
+	/* Reevaluate cpufreq policy with the effect of calling the governor with a
+	 * CPUFREQ_GOV_LIMITS event, so that the governor sets its preferred
+	 * frequency with the new (or no) DVFS limit. */
+	cpufreq_update_policy(0);
 }
 EXPORT_SYMBOL(s5pv210_unlock_dvfs_high_level);
 #endif
@@ -503,10 +500,11 @@ static int s5pv210_cpufreq_target(struct cpufreq_policy *policy,
 
 	arm_volt = (dvs_conf[index].arm_volt - (exp_UV_mV[index]*1000));
 	freq_uv_table[index][2] =(int) arm_volt / 1000;
-	int_volt = dvs_conf[index].int_volt;
-	
+	int_volt = (dvs_conf[index].int_volt - (exp_int_UV_mV[index]*1000));
+	freq_int_uv_table[index][2] =(int) int_volt / 1000;
+
 	//printk("setting vdd %d for speed %d\n", arm_volt, arm_clk);
-	
+
 	/* New clock information update */
 	memcpy(&s3c_freqs.new, &clk_info[index],
 			sizeof(struct s3c_freq));
