@@ -31,6 +31,7 @@
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
+#include <linux/switch.h>
 #ifdef CONFIG_FAST_CHARGE
 #include <linux/fast_charge.h>
 #endif
@@ -122,7 +123,6 @@ struct fsa9480_usbsw {
 };
 
 static struct fsa9480_usbsw *local_usbsw;
-
 
 static ssize_t fsa9480_show_control(struct device *dev,
 				   struct device_attribute *attr,
@@ -452,7 +452,7 @@ static irqreturn_t fsa9480_irq_thread(int irq, void *data)
 {
 	struct fsa9480_usbsw *usbsw = data;
 	struct i2c_client *client = usbsw->client;
-	int intr;
+	int intr,ret;unsigned int value;
 
 	/* read and clear interrupt status bits */
 	intr = i2c_smbus_read_word_data(client, FSA9480_REG_INT1);
@@ -469,6 +469,16 @@ static irqreturn_t fsa9480_irq_thread(int irq, void *data)
 
 	/* device detection */
 	fsa9480_detect_dev(usbsw);
+
+	value = i2c_smbus_read_byte_data(client,FSA9480_REG_CTRL);
+ 	//value &= 0xFE;//unmask interrupts
+ 	if(value&0x01)
+  	{
+   		value &=0xFE;
+		ret = i2c_smbus_write_byte_data(client,FSA9480_REG_CTRL, value);
+   		if (ret < 0)
+   		printk("fsa9480_irq_thread: recovery failed\n");
+  	}
 
 	return IRQ_HANDLED;
 }
@@ -573,24 +583,9 @@ static int __devexit fsa9480_remove(struct i2c_client *client)
 }
 
 #ifdef CONFIG_PM
-static int fsa9480_suspend(struct i2c_client *client)
-{
-	struct fsa9480_usbsw *usbsw = i2c_get_clientdata(client);
-    int ret;
-
-	/* mask interrupts */
-	ret = i2c_smbus_write_word_data(client, FSA9480_REG_INT1_MASK, 0x1fff);
-
-	return 0;
-}
-
 static int fsa9480_resume(struct i2c_client *client)
 {
 	struct fsa9480_usbsw *usbsw = i2c_get_clientdata(client);
-    int ret;
-
-	/* unmask attach/detach only */
-	ret = i2c_smbus_write_word_data(client, FSA9480_REG_INT1_MASK, 0x1ffc);
 
 	/* device detection */
 	fsa9480_detect_dev(usbsw);
@@ -617,7 +612,6 @@ static struct i2c_driver fsa9480_i2c_driver = {
 	},
 	.probe = fsa9480_probe,
 	.remove = __devexit_p(fsa9480_remove),
-    .suspend = fsa9480_suspend,
 	.resume = fsa9480_resume,
 	.id_table = fsa9480_id,
 };
