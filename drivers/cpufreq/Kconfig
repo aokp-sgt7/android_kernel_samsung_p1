@@ -173,13 +173,11 @@ config CPU_FREQ_DEFAULT_GOV_LAGFREE
 
 config CPU_FREQ_MIN_TICKS
     int "Ticks between governor polling interval."
-    default 10
     help
         Minimum number of ticks between polling interval for governors.
 
 config CPU_FREQ_SAMPLING_LATENCY_MULTIPLIER
     int "Sampling rate multiplier for governors."
-    default 250
     help
         Sampling latency rate multiplied by the cpu switch latency.
         Affects governor polling.
