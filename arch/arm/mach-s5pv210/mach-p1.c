@@ -7266,6 +7266,10 @@ static struct platform_device *crespo_devices[] __initdata = {
 #endif
 #endif
 
+#ifdef CONFIG_SND_S5P_RP
+	&s5p_device_rp,
+#endif
+
 #if defined(CONFIG_VIDEO_TSI)
 	&s3c_device_tsi,
 #endif	
